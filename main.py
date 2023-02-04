@@ -241,23 +241,20 @@ def build_xlsx_file():
         print("Working on news #" + str(idx) + " of " + str(number_of_urls))
 
         try:
-
-            try:
-                dataset = my_rssFeed.process_article(url)
-                add_row(ws, result_idx + 2, dataset)
-                result_idx += 1
-            except IndexError:
-                add_error_row(ws_error, error_idx + 2, url, url)
-                error_idx += 1
-                print("Error while getting: {} ".format(url))
-                continue
-            except EmptyTextException:
-                reason_text = 'Empty article text'
-                add_error_row(ws_error, error_idx + 2, url, url, reason_text)
-                error_idx += 1
-                print("Error: {} while getting: {} ".format(reason_text, url))
-                continue
-
+            dataset = my_rssFeed.process_article(url)
+            add_row(ws, result_idx + 2, dataset)
+            result_idx += 1
+        except IndexError:
+            add_error_row(ws_error, error_idx + 2, url, url)
+            error_idx += 1
+            print("Error while getting: {} ".format(url))
+            continue
+        except EmptyTextException:
+            reason_text = 'Empty article text'
+            add_error_row(ws_error, error_idx + 2, url, url, reason_text)
+            error_idx += 1
+            print("Error: {} while getting: {} ".format(reason_text, url))
+            continue
         except:
             print("Error: File Upload failed.")
             continue
@@ -282,52 +279,71 @@ def add_paragraph(document, dataset):
     document.add_paragraph(text)
 
 
-def build_docx_file():
-    document: Document = Document()
+def add_error_paragraph(document, url, idx, reason='Generic Error'):
+    document.add_paragraph(str(idx) + ' ' + url + ' -> Raison: ' + reason)
 
+
+def build_docx_file():
     current_GMT = time.gmtime()
     time_stamp = calendar.timegm(current_GMT)
-    document.add_heading('Export du ' + str(time_stamp), 0)
+
+    # Document to store results
+    document: Document = Document()
+    document.add_heading('Résultats de l\'export du ' + str(time_stamp), 0)
+
+    # Document to store error
+    error_document: Document = Document()
+    error_document.add_heading('Erreurs de l\'export du ' + str(time_stamp), 0)
 
     # We use our own index instead of the for idx because if we have errors we will have
     # blank row in the Result sheet
-    error_idx = 0
-    result_idx = 0
     idx = 0
     for url in urls:
         idx = idx + 1
         print("Working on news #" + str(idx) + " of " + str(number_of_urls))
 
         try:
-            try:
-                dataset = my_rssFeed.process_article(url)
-                add_paragraph(document, dataset)
-                result_idx += 1
-            except IndexError:
-                # add_error_row(ws_error, error_idx + 2, url, url)
-                error_idx += 1
-                print("Error while getting: {} ".format(url))
-                continue
-            except EmptyTextException:
-                reason_text = 'Empty article text'
-                # add_error_row(ws_error, error_idx + 2, url, url, reason_text)
-                error_idx += 1
-                print("Error: {} while getting: {} ".format(reason_text, url))
-                continue
-
-        except:
-            print("Error: File Upload failed.")
+            dataset = my_rssFeed.process_article(url)
+            add_paragraph(document, dataset)
+        except IndexError as e:
+            reason_text = 'Index Error'
+            add_error_paragraph(error_document, url, idx, reason_text)
+            print("Error while getting: {} ".format(url))
+            print(e)
+            continue
+        except EmptyTextException:
+            reason_text = 'Empty article text'
+            add_error_paragraph(error_document, url, idx, reason_text)
+            print("Error: {} while getting: {} ".format(reason_text, url))
+            continue
+        except Exception as e:
+            add_error_paragraph(error_document, url, idx)
+            print("Generic Error")
+            print(e)
             continue
 
     # Build file name
     filename = "data/2_results/" + "results_" + str(time_stamp) + ".docx"
     document.save(filename)
 
+    error_filename = "data/2_results/" + "results_" + str(time_stamp) + "_error" + ".docx"
+    error_document.save(error_filename)
+
 
 if __name__ == '__main__':
     urls = parse_mail_extract("extract.mbox")
 
     number_of_urls = len(urls)
+    print("Info: Found " + str(number_of_urls) + " to get.")
+
+    # Applying limit to the number of article to fetch if needed
+    max_article_limit = get_max_number_of_articles_to_get()
+    if number_of_urls > max_article_limit:
+        print("Info: Limit of article to get set to " + str(max_article_limit) +
+              " in the Config file. Articles after the limit will be ignored.")
+        urls = urls[0:max_article_limit]
+        number_of_urls = len(urls)
+
     my_rssFeed = news_feed_parser()
 
     build_docx_file()
