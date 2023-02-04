@@ -10,7 +10,7 @@ import calendar
 import time
 import configparser
 from openpyxl import Workbook
-
+from docx import Document
 
 # Code form
 # https://medium.com/analytics-vidhya/web-scraping-news-data-rss-feeds-python-and-google-cloud-platform-7a0df2bafe44
@@ -124,18 +124,24 @@ class news_feed_parser:
         return article_text
 
 
-def parse_mail_extract(extract_file):
+def parse_mail_extract(extract_file: str) -> list:
     extract_folder = "data/0_mailExtract/"
     f = open(extract_folder + extract_file, "r")
     raw_text = f.read()
 
+    # Remove the forced newline that truncates lines
     raw_text = raw_text.replace("=\r\n", "")
     raw_text = raw_text.replace("=\n", "")
+    # Replace unicode '&' with '&'
     raw_text = raw_text.replace("\\u0026", "&")
+    # Replace encoded '&' with '&'
     raw_text = raw_text.replace("&amp;", "&")
 
     p = re.compile('&url=3D(.*?)&ct')
     urls = p.findall(raw_text)
+
+    # Remove duplicates
+    unique_urls = list(dict.fromkeys(urls))
 
     # Build file name
     current_GMT = time.gmtime()
@@ -144,11 +150,11 @@ def parse_mail_extract(extract_file):
     result_filename = "urls_list" + str(time_stamp) + ".txt"
 
     f = open(url_list_folder + result_filename, "w")
-    f.writelines(url + '\n' for url in urls)
+    f.writelines(url + '\n' for url in unique_urls)
 
     f.close()
 
-    return urls
+    return unique_urls
 
 
 class EmptyTextException(Exception):
@@ -211,13 +217,7 @@ def get_rss_feed_url():
     return get_config()['GoogleAlert']['rss_feed_url']
 
 
-if __name__ == '__main__':
-
-    urls = parse_mail_extract("extract.mbox")
-
-    number_of_urls = len(urls)
-    my_rssFeed = news_feed_parser()
-
+def build_xlsx_file():
     wb, ws, ws_error = init_sheet()
 
     # We use our own index instead of the for idx because if we have errors we will have
@@ -251,6 +251,81 @@ if __name__ == '__main__':
             print("Error: File Upload failed.")
             continue
 
+    # Build file name
+    current_GMT = time.gmtime()
+    time_stamp = calendar.timegm(current_GMT)
+    filename = "data/2_results/" + "results_" + str(time_stamp) + ".xlsx"
+    wb.save(filename)
+
+
+def add_paragraph(document, dataset):
+    working_url = dataset.url[0]
+    title = dataset.title[0]
+    text = dataset.text[0]
+
+    if not text:
+        raise EmptyTextException
+
+    document.add_heading(title, level=1)
+    document.add_paragraph(text)
+    document.add_paragraph(working_url)
+
+
+def build_docx_file():
+
+    document: Document = Document()
+
+    current_GMT = time.gmtime()
+    time_stamp = calendar.timegm(current_GMT)
+    document.add_heading('Export du ' + str(time_stamp), 0)
+
+    # We use our own index instead of the for idx because if we have errors we will have
+    # blank row in the Result sheet
+    error_idx = 0
+    result_idx = 0
+    idx = 0
+    for url in urls:
+
+        if idx >= 50:
+            break
+
+        idx = idx + 1
+        print("Working on news #" + str(idx) + " of " + str(number_of_urls))
+
+        try:
+            try:
+                dataset = my_rssFeed.process_article(url, "notitle")
+                add_paragraph(document, dataset)
+                result_idx += 1
+            except IndexError:
+                # add_error_row(ws_error, error_idx + 2, url, url)
+                error_idx += 1
+                print("Error while getting: {} ".format(url))
+                continue
+            except EmptyTextException:
+                reason_text = 'Empty article text'
+                # add_error_row(ws_error, error_idx + 2, url, url, reason_text)
+                error_idx += 1
+                print("Error: {} while getting: {} ".format(reason_text, url))
+                continue
+
+        except:
+            print("Error: File Upload failed.")
+            continue
+
+    # Build file name
+    filename = "data/2_results/" + "results_" + str(time_stamp) + ".docx"
+    document.save(filename)
+
+
+if __name__ == '__main__':
+
+    urls = parse_mail_extract("extract.mbox")
+
+    number_of_urls = len(urls)
+    my_rssFeed = news_feed_parser()
+
+    build_docx_file()
 
     # url = get_rss_feed_url()
     #
@@ -301,8 +376,4 @@ if __name__ == '__main__':
     #         print("Error: File Upload failed.")
     #         continue
 
-    # Build file name
-    current_GMT = time.gmtime()
-    time_stamp = calendar.timegm(current_GMT)
-    filename = "results/result" + str(time_stamp) + ".xlsx"
-    wb.save(filename)
+
