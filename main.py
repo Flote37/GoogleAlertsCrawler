@@ -295,11 +295,7 @@ def build_docx_file():
     error_document: Document = Document()
     error_document.add_heading('Erreurs de l\'export du ' + str(time_stamp), 0)
 
-    # We use our own index instead of the for idx because if we have errors we will have
-    # blank row in the Result sheet
-    idx = 0
-    for url in urls:
-        idx = idx + 1
+    for idx, url in enumerate(urls):
         print("Working on news #" + str(idx) + " of " + str(number_of_urls))
 
         try:
