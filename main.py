@@ -224,6 +224,10 @@ def get_rss_feed_url():
     return get_config()['GoogleAlert']['rss_feed_url']
 
 
+def get_max_number_of_articles_to_get():
+    return int(get_config()['GoogleAlert']['max_number_of_articles_to_get'])
+
+
 def build_xlsx_file():
     wb, ws, ws_error = init_sheet()
 
