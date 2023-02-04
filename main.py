@@ -11,6 +11,7 @@ import time
 import configparser
 from openpyxl import Workbook
 from docx import Document
+import multiprocessing as mp
 
 
 # Code form
@@ -35,19 +36,33 @@ class news_feed_parser:
         return df_news_feed
 
     # Process articles dataset
-    def process_article(self, article_url):
-        # Loop to parse each rss feed article url
-        articles_dataset = pd.DataFrame(columns=['url', 'title', 'text'])
-        article_text, article_title = self.parse_article(article_url)
-        if article_text != None:
-            new_data = pd.DataFrame([{'url': article_url
-                                         , 'title': article_title
-                                         , 'text': article_text
-                                      }], columns=['url', 'title', 'text'])
-            articles_dataset = pd.concat((articles_dataset, new_data), ignore_index=True, sort=False)
+    def process_article(self, article_url: str) -> (str, str, str, Exception):
+        print("Fetching " + article_url)
 
-        articles_dataset['text_length'] = articles_dataset['text'].apply(lambda x: len(x))
-        return articles_dataset
+        article_text = ''
+        article_title = 'no title'
+        error = ''
+
+        try:
+            article_text, article_title = self.parse_article(article_url)
+            if not article_text:
+                raise EmptyTextException
+        except IndexError as e:
+            error = e
+            print("Error while getting: {} ".format(article_url))
+            print(e)
+        except EmptyTextException as e:
+            error = e
+            reason_text = 'Empty article text'
+            print("Error: {} while getting: {} ".format(reason_text, article_url))
+            print(e)
+        except Exception as e:
+            error = e
+            reason_text = 'Generic Error'
+            print("Error: {} while getting: {} ".format(reason_text, article_url))
+            print(e)
+
+        return article_url, article_text, article_title, error
 
     # Build and return parent hierarchy
     def get_parent_hierarchy(self, article_parents):
@@ -166,7 +181,9 @@ def parse_mail_extract(extract_file: str) -> list:
 
 class EmptyTextException(Exception):
     """Raised when the article text is empty"""
-    pass
+    def __init__(self, message="Empty article text"):
+        self.message = message
+        super().__init__(self.message)
 
 
 def init_sheet():
@@ -266,16 +283,12 @@ def build_xlsx_file():
     wb.save(filename)
 
 
-def add_paragraph(document, dataset):
-    working_url = dataset.url[0]
-    title = dataset.title[0]
-    text = dataset.text[0]
-
+def add_paragraph(document, url, text, title):
     if not text:
         raise EmptyTextException
 
     document.add_heading(title, level=1)
-    document.add_paragraph(working_url)
+    document.add_paragraph(url)
     document.add_paragraph(text)
 
 
@@ -295,28 +308,23 @@ def build_docx_file():
     error_document: Document = Document()
     error_document.add_heading('Erreurs de l\'export du ' + str(time_stamp), 0)
 
-    for idx, url in enumerate(urls):
-        print("Working on news #" + str(idx) + " of " + str(number_of_urls))
+    # Warning !!! Trying to speed up things from here
+    print("Gotta go fast with those " + str(mp.cpu_count()) + " CPUs")
+    pool = mp.Pool(mp.cpu_count())
+    results = pool.map(my_rssFeed.process_article, urls)
+    pool.close()
 
-        try:
-            dataset = my_rssFeed.process_article(url)
-            add_paragraph(document, dataset)
-        except IndexError as e:
-            reason_text = 'Index Error'
-            add_error_paragraph(error_document, url, idx, reason_text)
-            print("Error while getting: {} ".format(url))
-            print(e)
-            continue
-        except EmptyTextException:
-            reason_text = 'Empty article text'
-            add_error_paragraph(error_document, url, idx, reason_text)
-            print("Error: {} while getting: {} ".format(reason_text, url))
-            continue
-        except Exception as e:
-            add_error_paragraph(error_document, url, idx)
-            print("Generic Error")
-            print(e)
-            continue
+    for idx, result in enumerate(results):
+        print("Working on news #" + str(idx) + " of " + str(number_of_urls))
+        url = result[0]
+        text = result[1]
+        title = result[2]
+        error = result[3]
+
+        if not error:
+            add_paragraph(document, url, text, title)
+        else:
+            add_error_paragraph(error_document, url, idx, str(error))
 
     # Build file name
     filename = "data/2_results/" + "results_" + str(time_stamp) + ".docx"
