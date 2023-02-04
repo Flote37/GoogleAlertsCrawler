@@ -285,10 +285,6 @@ def build_docx_file():
     result_idx = 0
     idx = 0
     for url in urls:
-
-        if idx >= 50:
-            break
-
         idx = idx + 1
         print("Working on news #" + str(idx) + " of " + str(number_of_urls))
 
