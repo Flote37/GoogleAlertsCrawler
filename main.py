@@ -12,6 +12,7 @@ import configparser
 from openpyxl import Workbook
 from docx import Document
 
+
 # Code form
 # https://medium.com/analytics-vidhya/web-scraping-news-data-rss-feeds-python-and-google-cloud-platform-7a0df2bafe44
 
@@ -34,10 +35,10 @@ class news_feed_parser:
         return df_news_feed
 
     # Process articles dataset
-    def process_article(self, article_url, article_title):
+    def process_article(self, article_url):
         # Loop to parse each rss feed article url
         articles_dataset = pd.DataFrame(columns=['url', 'title', 'text'])
-        article_text = self.parse_article(article_url)
+        article_text, article_title = self.parse_article(article_url)
         if article_text != None:
             new_data = pd.DataFrame([{'url': article_url
                                          , 'title': article_title
@@ -71,12 +72,18 @@ class news_feed_parser:
         return parent_hierarchy
 
     # Parse url and return article text
-    def parse_article(self, article_url):
+    def parse_article(self, article_url) -> (str, str):
         # Request the article url to get the web page content.
         article_result = requests.get(article_url)
+        article_content = BeautifulSoup(article_result.content, 'html.parser')
+
+        # Bonus step : fetch the page title
+        article_title = 'no title'
+        title_tag = article_content.findAll('title')
+        if len(title_tag) > 0:
+            article_title = title_tag[0].text
 
         # 1. extract all paragraph elements inside the page body
-        article_content = BeautifulSoup(article_result.content, 'html.parser')
         articles_body = article_content.findAll('body')
 
         p_blocks = articles_body[0].findAll('p')
@@ -121,7 +128,7 @@ class news_feed_parser:
                 p_blocks_df.loc[p_blocks_df['parent_hierarchy'] == max_id, 'element_text'].to_list())
 
         # Return article text
-        return article_text
+        return article_text, article_title
 
 
 def parse_mail_extract(extract_file: str) -> list:
@@ -232,7 +239,7 @@ def build_xlsx_file():
         try:
 
             try:
-                dataset = my_rssFeed.process_article(url, "notitle")
+                dataset = my_rssFeed.process_article(url)
                 add_row(ws, result_idx + 2, dataset)
                 result_idx += 1
             except IndexError:
@@ -267,12 +274,11 @@ def add_paragraph(document, dataset):
         raise EmptyTextException
 
     document.add_heading(title, level=1)
-    document.add_paragraph(text)
     document.add_paragraph(working_url)
+    document.add_paragraph(text)
 
 
 def build_docx_file():
-
     document: Document = Document()
 
     current_GMT = time.gmtime()
@@ -290,7 +296,7 @@ def build_docx_file():
 
         try:
             try:
-                dataset = my_rssFeed.process_article(url, "notitle")
+                dataset = my_rssFeed.process_article(url)
                 add_paragraph(document, dataset)
                 result_idx += 1
             except IndexError:
@@ -315,7 +321,6 @@ def build_docx_file():
 
 
 if __name__ == '__main__':
-
     urls = parse_mail_extract("extract.mbox")
 
     number_of_urls = len(urls)
@@ -371,5 +376,3 @@ if __name__ == '__main__':
     #     except:
     #         print("Error: File Upload failed.")
     #         continue
-
-
