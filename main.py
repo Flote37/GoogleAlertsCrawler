@@ -124,6 +124,33 @@ class news_feed_parser:
         return article_text
 
 
+def parse_mail_extract(extract_file):
+    extract_folder = "data/0_mailExtract/"
+    f = open(extract_folder + extract_file, "r")
+    raw_text = f.read()
+
+    raw_text = raw_text.replace("=\r\n", "")
+    raw_text = raw_text.replace("=\n", "")
+    raw_text = raw_text.replace("\\u0026", "&")
+    raw_text = raw_text.replace("&amp;", "&")
+
+    p = re.compile('&url=3D(.*?)&ct')
+    urls = p.findall(raw_text)
+
+    # Build file name
+    current_GMT = time.gmtime()
+    time_stamp = calendar.timegm(current_GMT)
+    url_list_folder = "data/1_urlList/"
+    result_filename = "urls_list" + str(time_stamp) + ".txt"
+
+    f = open(url_list_folder + result_filename, "w")
+    f.writelines(url + '\n' for url in urls)
+
+    f.close()
+
+    return urls
+
+
 class EmptyTextException(Exception):
     """Raised when the article text is empty"""
     pass
@@ -185,20 +212,11 @@ def get_rss_feed_url():
 
 
 if __name__ == '__main__':
-    url = get_rss_feed_url()
 
-    # Try running the search-and-extract process
-    try:
-        # Get articles from news feed
-        my_rssFeed = news_feed_parser()
-        news_feed_data = my_rssFeed.parse_rss_feed(url)
-    except:
-        print("Error: calling news feed url: {} ".format(url))
-        raise
+    urls = parse_mail_extract("extract.mbox")
 
-    # Get number of items to work on
-    number_of_news = len(news_feed_data)
-    print('news_feed_data len: ', number_of_news)
+    number_of_urls = len(urls)
+    my_rssFeed = news_feed_parser()
 
     wb, ws, ws_error = init_sheet()
 
@@ -206,33 +224,84 @@ if __name__ == '__main__':
     # blank row in the Result sheet
     error_idx = 0
     result_idx = 0
-    for idx, row in news_feed_data.iterrows():
-        print("Working on news #" + str(idx) + " of " + str(number_of_news))
+    idx = 0
+    for url in urls:
+        if idx >= 50:
+            break
+        idx = idx + 1
+        print("Working on news #" + str(idx) + " of " + str(number_of_urls))
 
         try:
-            link = row.link
-            re_result = re.search("^.*url=(.*)&ct.*$", link)
-            true_link = re_result.group(1)
 
             try:
-                dataset = my_rssFeed.process_article(true_link, row.title)
+                dataset = my_rssFeed.process_article(url, "notitle")
                 add_row(ws, result_idx + 2, dataset)
                 result_idx += 1
             except IndexError:
-                add_error_row(ws_error, error_idx + 2, link, true_link)
+                add_error_row(ws_error, error_idx + 2, url, url)
                 error_idx += 1
-                print("Error while getting: {} ".format(link))
+                print("Error while getting: {} ".format(url))
                 continue
             except EmptyTextException:
                 reason_text = 'Empty article text'
-                add_error_row(ws_error, error_idx + 2, link, true_link, reason_text)
+                add_error_row(ws_error, error_idx + 2, url, url, reason_text)
                 error_idx += 1
-                print("Error: {} while getting: {} ".format(reason_text, link))
+                print("Error: {} while getting: {} ".format(reason_text, url))
                 continue
 
         except:
             print("Error: File Upload failed.")
             continue
+
+
+    # url = get_rss_feed_url()
+    #
+    # # Try running the search-and-extract process
+    # try:
+    #     # Get articles from news feed
+    #     my_rssFeed = news_feed_parser()
+    #     news_feed_data = my_rssFeed.parse_rss_feed(url)
+    # except:
+    #     print("Error: calling news feed url: {} ".format(url))
+    #     raise
+
+    # # Get number of items to work on
+    # number_of_news = len(news_feed_data)
+    # print('news_feed_data len: ', number_of_news)
+    #
+    # wb, ws, ws_error = init_sheet()
+    #
+    # # We use our own index instead of the for idx because if we have errors we will have
+    # # blank row in the Result sheet
+    # error_idx = 0
+    # result_idx = 0
+    # for idx, row in news_feed_data.iterrows():
+    #     print("Working on news #" + str(idx) + " of " + str(number_of_news))
+    #
+    #     try:
+    #         link = row.link
+    #         re_result = re.search("^.*url=(.*)&ct.*$", link)
+    #         true_link = re_result.group(1)
+    #
+    #         try:
+    #             dataset = my_rssFeed.process_article(true_link, row.title)
+    #             add_row(ws, result_idx + 2, dataset)
+    #             result_idx += 1
+    #         except IndexError:
+    #             add_error_row(ws_error, error_idx + 2, link, true_link)
+    #             error_idx += 1
+    #             print("Error while getting: {} ".format(link))
+    #             continue
+    #         except EmptyTextException:
+    #             reason_text = 'Empty article text'
+    #             add_error_row(ws_error, error_idx + 2, link, true_link, reason_text)
+    #             error_idx += 1
+    #             print("Error: {} while getting: {} ".format(reason_text, link))
+    #             continue
+    #
+    #     except:
+    #         print("Error: File Upload failed.")
+    #         continue
 
     # Build file name
     current_GMT = time.gmtime()
